@@ -193,27 +193,35 @@ class BoschFlowHandler(config_entries.ConfigFlow):
     ):
         try:
             BoschGateway = gateway_chooser(device_type)
+            _LOGGER.debug(f"Configuring gateway: device_type={device_type}, POINTTAPI={POINTTAPI}, match={device_type == POINTTAPI}")
+            
+            # Create session early if needed
+            if session is None and (device_type == POINTTAPI or session_type == HTTP):
+                session = async_get_clientsession(self.hass, verify_ssl=False)
+            
+            # Build kwargs based on device type
             kwargs = {
-                "session_type": session_type,
                 "host": host,
                 "access_token": access_token,
             }
             
-            # Special handling for Oauth2Gateway (IVTAIR/K30)
+            # Add parameters based on device type
             if device_type == POINTTAPI:
-                # Oauth2Gateway requires session and device_type
-                if session is None:
-                    session = async_get_clientsession(self.hass, verify_ssl=False)
+                # Oauth2Gateway for K30/IVTAIR
                 kwargs["session"] = session
                 kwargs["device_type"] = device_type
+            else:
+                # Other device types
+                kwargs["session_type"] = session_type
+                if session is not None:
+                    kwargs["session"] = session
+                if password is not None:
+                    kwargs["password"] = password
             
-            if password is not None:
-                kwargs["password"] = password
-            if session is not None and device_type != POINTTAPI:
-                kwargs["session"] = session
             if refresh_token is not None:
                 kwargs["refresh_token"] = refresh_token
             
+            _LOGGER.debug(f"Gateway kwargs: {list(kwargs.keys())}")
             device = BoschGateway(**kwargs)
             try:
                 uuid = await device.check_connection()
@@ -233,11 +241,13 @@ class BoschFlowHandler(config_entries.ConfigFlow):
             data = {
                 CONF_ADDRESS: device.host,
                 UUID: uuid,
-                ACCESS_KEY: device.access_key,
                 ACCESS_TOKEN: device.access_token,
                 CONF_DEVICE_TYPE: self._choose_type,
                 CONF_PROTOCOL: session_type,
             }
+            # access_key might not exist for Oauth2Gateway
+            if hasattr(device, 'access_key'):
+                data[ACCESS_KEY] = device.access_key
             if refresh_token is not None:
                 data[CONF_REFRESH_TOKEN] = refresh_token
             return self.async_create_entry(

@@ -150,7 +150,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         host=entry.data[CONF_ADDRESS],
         protocol=entry.data[CONF_PROTOCOL],
         device_type=entry.data[CONF_DEVICE_TYPE],
-        access_key=entry.data[ACCESS_KEY],
+        access_key=entry.data.get(ACCESS_KEY),
         access_token=entry.data[ACCESS_TOKEN],
         refresh_token=entry.data.get(REFRESH_TOKEN),
         entry=entry,
@@ -238,25 +238,32 @@ class BoschGatewayEntry:
         import bosch_thermostat_client as bosch
 
         _LOGGER.debug("Initializing Bosch integration.")
+        _LOGGER.debug(f"Device type: {self._device_type}, POINTTAPI: {POINTTAPI}, match: {self._device_type == POINTTAPI}")
         self._update_lock = asyncio.Lock()
         BoschGateway = bosch.gateway_chooser(device_type=self._device_type)
+        
+        # Build gateway kwargs
         gateway_kwargs = {
-            "session_type": self._protocol,
             "host": self._host,
-            "access_key": self._access_key,
             "access_token": self._access_token,
         }
         
-        # Special handling for Oauth2Gateway (IVTAIR/K30)
+        # Add parameters based on device type
         if self._device_type == POINTTAPI:
+            # Oauth2Gateway for K30/IVTAIR
             gateway_kwargs["session"] = async_get_clientsession(self.hass, verify_ssl=False)
             gateway_kwargs["device_type"] = self._device_type
-        elif self._protocol == HTTP:
-            gateway_kwargs["session"] = async_get_clientsession(self.hass, verify_ssl=False)
+        else:
+            # Other device types
+            gateway_kwargs["session_type"] = self._protocol
+            gateway_kwargs["access_key"] = self._access_key
+            if self._protocol == HTTP:
+                gateway_kwargs["session"] = async_get_clientsession(self.hass, verify_ssl=False)
         
         if self._refresh_token is not None:
             gateway_kwargs["refresh_token"] = self._refresh_token
         
+        _LOGGER.debug(f"Gateway init kwargs: {list(gateway_kwargs.keys())}")
         self.gateway = BoschGateway(**gateway_kwargs)
 
         async def close_connection(event) -> None:
