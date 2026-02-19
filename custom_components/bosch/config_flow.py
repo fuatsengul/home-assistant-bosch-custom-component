@@ -191,7 +191,13 @@ class BoschFlowHandler(config_entries.ConfigFlow):
         self, device_type, session_type, host, access_token, password=None, session=None, refresh_token=None
     ):
         try:
-            BoschGateway = gateway_chooser(device_type)
+            # Special handling for POINTTAPI (PoinTT API)
+            if device_type == POINTTAPI:
+                from bosch_thermostat_client.gateway.pointtapi import PoinTTAPIGateway
+                BoschGateway = PoinTTAPIGateway
+            else:
+                BoschGateway = gateway_chooser(device_type)
+            
             kwargs = {
                 "session_type": session_type,
                 "host": host,
