@@ -3,7 +3,7 @@ import logging
 
 import voluptuous as vol
 from bosch_thermostat_client import gateway_chooser
-from bosch_thermostat_client.const import HTTP, XMPP
+from bosch_thermostat_client.const import HTTP, XMPP, POINTTAPI
 from bosch_thermostat_client.const.easycontrol import EASYCONTROL
 from bosch_thermostat_client.const.ivt import IVT, IVT_MBLAN
 from bosch_thermostat_client.const.nefit import NEFIT
@@ -23,13 +23,15 @@ from . import create_notification_firmware
 from .const import (
     ACCESS_KEY,
     ACCESS_TOKEN,
+    REFRESH_TOKEN,
     CONF_DEVICE_TYPE,
     CONF_PROTOCOL,
+    CONF_REFRESH_TOKEN,
     DOMAIN,
     UUID,
 )
 
-DEVICE_TYPE = [NEFIT, IVT, EASYCONTROL, IVT_MBLAN]
+DEVICE_TYPE = [NEFIT, IVT, EASYCONTROL, IVT_MBLAN, POINTTAPI]
 PROTOCOLS = [HTTP, XMPP]
 
 
@@ -57,11 +59,13 @@ class BoschFlowHandler(config_entries.ConfigFlow):
         return await self.async_step_choose_type(user_input)
 
     async def async_step_choose_type(self, user_input=None):
-        """Choose if setup is for IVT, IVT/MBLAN, NEFIT or EASYCONTROL."""
+        """Choose if setup is for IVT, IVT/MBLAN, NEFIT, EASYCONTROL, or PoinTT API."""
         errors = {}
         if user_input is not None:
             self._choose_type = user_input[CONF_DEVICE_TYPE]
-            if self._choose_type == IVT:
+            if self._choose_type == POINTTAPI:
+                return await self.async_step_pointt_oauth()
+            elif self._choose_type == IVT:
                 return self.async_show_form(
                     step_id="protocol",
                     data_schema=vol.Schema(
@@ -148,18 +152,58 @@ class BoschFlowHandler(config_entries.ConfigFlow):
                 password=self._password,
             )
 
+    async def async_step_pointt_oauth(self, user_input=None):
+        """Handle PoinTT API OAuth authentication."""
+        errors = {}
+        if user_input is not None:
+            device_id = user_input.get(CONF_ADDRESS)
+            access_token = user_input.get(ACCESS_TOKEN)
+            refresh_token = user_input.get(CONF_REFRESH_TOKEN)
+            
+            if not device_id or not access_token or not refresh_token:
+                errors["base"] = "invalid_oauth_tokens"
+            else:
+                return await self.configure_gateway(
+                    device_type=self._choose_type,
+                    session_type=HTTP,
+                    host=device_id,
+                    access_token=access_token,
+                    refresh_token=refresh_token,
+                )
+        
+        return self.async_show_form(
+            step_id="pointt_oauth",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_ADDRESS): str,
+                    vol.Required(ACCESS_TOKEN): str,
+                    vol.Required(CONF_REFRESH_TOKEN): str,
+                }
+            ),
+            description_placeholders={
+                "oauth_setup_url": "https://github.com/deric/bosch-thermostat-client-python/blob/k30/examples/pointtapi_oauth_setup.py",
+            },
+            errors=errors,
+        )
+
     async def configure_gateway(
-        self, device_type, session_type, host, access_token, password=None, session=None
+        self, device_type, session_type, host, access_token, password=None, session=None, refresh_token=None
     ):
         try:
             BoschGateway = gateway_chooser(device_type)
-            device = BoschGateway(
-                session_type=session_type,
-                host=host,
-                access_token=access_token,
-                password=password,
-                session=session,
-            )
+            kwargs = {
+                "session_type": session_type,
+                "host": host,
+                "access_token": access_token,
+            }
+            if password is not None:
+                kwargs["password"] = password
+            if session is not None:
+                kwargs["session"] = session
+            if refresh_token is not None:
+                kwargs["refresh_token"] = refresh_token
+            
+            device = BoschGateway(**kwargs)
             try:
                 uuid = await device.check_connection()
             except (FirmwareException, UnknownDevice) as err:
@@ -175,16 +219,19 @@ class BoschFlowHandler(config_entries.ConfigFlow):
             _LOGGER.error("Error connecting Bosch at %s - %s", host, err)
         else:
             _LOGGER.debug("Adding Bosch entry.")
+            data = {
+                CONF_ADDRESS: device.host,
+                UUID: uuid,
+                ACCESS_KEY: device.access_key,
+                ACCESS_TOKEN: device.access_token,
+                CONF_DEVICE_TYPE: self._choose_type,
+                CONF_PROTOCOL: session_type,
+            }
+            if refresh_token is not None:
+                data[CONF_REFRESH_TOKEN] = refresh_token
             return self.async_create_entry(
                 title=device.device_name or "Unknown model",
-                data={
-                    CONF_ADDRESS: device.host,
-                    UUID: uuid,
-                    ACCESS_KEY: device.access_key,
-                    ACCESS_TOKEN: device.access_token,
-                    CONF_DEVICE_TYPE: self._choose_type,
-                    CONF_PROTOCOL: session_type,
-                },
+                data=data,
             )
 
     async def async_step_discovery(self, discovery_info=None):

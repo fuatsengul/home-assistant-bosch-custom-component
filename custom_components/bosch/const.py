@@ -2,7 +2,7 @@
 from datetime import timedelta
 
 import voluptuous as vol
-from bosch_thermostat_client.const import DHW, HC, SC, ZN
+from bosch_thermostat_client.const import DHW, HC, SC, ZN, POINTTAPI
 from bosch_thermostat_client.const.easycontrol import DV
 from homeassistant.const import UnitOfEnergy, UnitOfTemperature
 
@@ -10,10 +10,12 @@ DOMAIN = "bosch"
 BOSCH_GATEWAY_ENTRY = "BoschGatewayEntry"
 ACCESS_KEY = "access_key"
 ACCESS_TOKEN = "access_token"
+REFRESH_TOKEN = "refresh_token"
 UUID = "uuid"
 
 CONF_PROTOCOL = "http_xmpp"
 CONF_DEVICE_TYPE = "device_type"
+CONF_REFRESH_TOKEN = "refresh_token"
 
 GATEWAY = "gateway"
 CLIMATE = "climate"
@@ -78,6 +80,7 @@ UNITS_CONVERTER = {
 }
 
 NOTIFICATION_ID = "bosch_notification"
+OAUTH_TOKEN_FILE = "bosch_oauth_tokens.json"
 SCAN_INTERVAL = timedelta(seconds=60)
 FIRMWARE_SCAN_INTERVAL = timedelta(hours=4)
 SCAN_SENSOR_INTERVAL = timedelta(seconds=120)

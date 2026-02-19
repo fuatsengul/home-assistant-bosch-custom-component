@@ -62,6 +62,7 @@ from custom_components.bosch.switch import SWITCH
 from .const import (
     ACCESS_KEY,
     ACCESS_TOKEN,
+    REFRESH_TOKEN,
     BINARY_SENSOR,
     BOSCH_GATEWAY_ENTRY,
     CLIMATE,
@@ -150,6 +151,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         device_type=entry.data[CONF_DEVICE_TYPE],
         access_key=entry.data[ACCESS_KEY],
         access_token=entry.data[ACCESS_TOKEN],
+        refresh_token=entry.data.get(REFRESH_TOKEN),
         entry=entry,
     )
     hass.data[DOMAIN][uuid] = {BOSCH_GATEWAY_ENTRY: gateway_entry}
@@ -206,7 +208,7 @@ class BoschGatewayEntry:
     """Bosch gateway entry config class."""
 
     def __init__(
-        self, hass, uuid, host, protocol, device_type, access_key, access_token, entry
+        self, hass, uuid, host, protocol, device_type, access_key, access_token, entry, refresh_token=None
     ) -> None:
         """Init Bosch gateway entry config class."""
         self.hass = hass
@@ -214,6 +216,7 @@ class BoschGatewayEntry:
         self._host = host
         self._access_key = access_key
         self._access_token = access_token
+        self._refresh_token = refresh_token
         self._device_type = device_type
         self._protocol = protocol
         self.config_entry = entry
@@ -236,15 +239,18 @@ class BoschGatewayEntry:
         _LOGGER.debug("Initializing Bosch integration.")
         self._update_lock = asyncio.Lock()
         BoschGateway = bosch.gateway_chooser(device_type=self._device_type)
-        self.gateway = BoschGateway(
-            session=async_get_clientsession(self.hass, verify_ssl=False)
-            if self._protocol == HTTP
-            else None,
-            session_type=self._protocol,
-            host=self._host,
-            access_key=self._access_key,
-            access_token=self._access_token,
-        )
+        gateway_kwargs = {
+            "session_type": self._protocol,
+            "host": self._host,
+            "access_key": self._access_key,
+            "access_token": self._access_token,
+        }
+        if self._protocol == HTTP:
+            gateway_kwargs["session"] = async_get_clientsession(self.hass, verify_ssl=False)
+        if self._refresh_token is not None:
+            gateway_kwargs["refresh_token"] = self._refresh_token
+        
+        self.gateway = BoschGateway(**gateway_kwargs)
 
         async def close_connection(event) -> None:
             """Close connection with server."""
