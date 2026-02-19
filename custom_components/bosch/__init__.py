@@ -240,7 +240,17 @@ class BoschGatewayEntry:
         _LOGGER.debug("Initializing Bosch integration.")
         _LOGGER.debug(f"Device type: {self._device_type}, POINTTAPI: {POINTTAPI}, match: {self._device_type == POINTTAPI}")
         self._update_lock = asyncio.Lock()
-        BoschGateway = bosch.gateway_chooser(device_type=self._device_type)
+        
+        try:
+            BoschGateway = bosch.gateway_chooser(device_type=self._device_type)
+        except (KeyError, ValueError) as err:
+            _LOGGER.warning(f"Device type {self._device_type} not found in gateway_chooser, attempting POINTTAPI as fallback: {err}")
+            # Fallback for unknown device types (like K30RF with brand='unknown')
+            try:
+                BoschGateway = bosch.gateway_chooser(POINTTAPI)
+            except Exception as fallback_err:
+                _LOGGER.error(f"Could not select gateway for device type {self._device_type}: {fallback_err}")
+                return False
         
         # Build gateway kwargs
         gateway_kwargs = {
@@ -256,7 +266,8 @@ class BoschGatewayEntry:
         else:
             # Other device types
             gateway_kwargs["session_type"] = self._protocol
-            gateway_kwargs["access_key"] = self._access_key
+            if self._access_key:
+                gateway_kwargs["access_key"] = self._access_key
             if self._protocol == HTTP:
                 gateway_kwargs["session"] = async_get_clientsession(self.hass, verify_ssl=False)
         

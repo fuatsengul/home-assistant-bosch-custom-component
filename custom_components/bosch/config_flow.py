@@ -223,30 +223,60 @@ class BoschFlowHandler(config_entries.ConfigFlow):
             
             _LOGGER.debug(f"Gateway kwargs: {list(kwargs.keys())}")
             device = BoschGateway(**kwargs)
+            
+            uuid = None
             try:
                 uuid = await device.check_connection()
+                _LOGGER.debug(f"Device check_connection returned uuid: {uuid}")
             except (FirmwareException, UnknownDevice) as err:
+                _LOGGER.warning(f"Firmware or Unknown Device error: {err}")
                 create_notification_firmware(hass=self.hass, msg=err)
-                uuid = device.uuid
-            if uuid:
+                uuid = getattr(device, 'uuid', None)
+                _LOGGER.debug(f"Using device.uuid after FirmwareException: {uuid}")
+            except Exception as err:
+                _LOGGER.warning(f"Error during check_connection: {err}. Attempting to get UUID from device object.")
+                # Try to get UUID from device object even if check_connection failed
+                uuid = getattr(device, 'uuid', None)
+                _LOGGER.debug(f"UUID from device object: {uuid}")
+            
+            # For unknown/unsupported devices, try to get UUID from gateway info
+            if not uuid:
+                try:
+                    # Attempt direct API call for gateway UUID
+                    gateway_data = await device.async_request("get", "/gateway/uuid")
+                    if gateway_data and isinstance(gateway_data, dict):
+                        uuid = gateway_data.get("value") or gateway_data.get("uuid")
+                    _LOGGER.debug(f"UUID from gateway API: {uuid}")
+                except Exception as err:
+                    _LOGGER.debug(f"Could not retrieve UUID from gateway API: {err}")
+            
+            if uuid and uuid != "-1":  # K30 may return "-1" as placeholder
                 await self.async_set_unique_id(uuid)
                 self._abort_if_unique_id_configured()
-        except (DeviceException, EncryptionException) as err:
-            _LOGGER.error("Wrong IP or credentials at %s - %s", host, err)
-            return self.async_abort(reason="faulty_credentials")
-        except Exception as err:  # pylint: disable=broad-except
-            _LOGGER.error("Error connecting Bosch at %s - %s", host, err)
-        else:
+            elif uuid == "-1":
+                # Use device serial number or host as fallback unique ID
+                fallback_id = getattr(device, 'serial_number', None) or host or "bosch_unknown"
+                _LOGGER.warning(f"Device returned placeholder UUID '-1', using fallback: {fallback_id}")
+                await self.async_set_unique_id(fallback_id)
+                self._abort_if_unique_id_configured()
+                uuid = fallback_id
+            else:
+                _LOGGER.error(f"No UUID obtained from device")
+                return self.async_abort(reason="unknown")
+            
             _LOGGER.debug("Adding Bosch entry.")
             data = {
-                CONF_ADDRESS: device.host,
+                CONF_ADDRESS: host,  # Use input host instead of device.host in case device.host is not set
                 UUID: uuid,
                 ACCESS_TOKEN: device.access_token,
                 CONF_DEVICE_TYPE: self._choose_type,
                 CONF_PROTOCOL: session_type,
             }
+            # Fallback to host if device.host not available
+            if hasattr(device, 'host') and device.host:
+                data[CONF_ADDRESS] = device.host
             # access_key might not exist for Oauth2Gateway
-            if hasattr(device, 'access_key'):
+            if hasattr(device, 'access_key') and device.access_key:
                 data[ACCESS_KEY] = device.access_key
             if refresh_token is not None:
                 data[CONF_REFRESH_TOKEN] = refresh_token
@@ -254,6 +284,12 @@ class BoschFlowHandler(config_entries.ConfigFlow):
                 title=device.device_name or "Unknown model",
                 data=data,
             )
+        except (DeviceException, EncryptionException) as err:
+            _LOGGER.error("Wrong IP or credentials at %s - %s", host, err)
+            return self.async_abort(reason="faulty_credentials")
+        except Exception as err:  # pylint: disable=broad-except
+            _LOGGER.exception("Unexpected error connecting Bosch at %s", host)
+            return self.async_abort(reason="unknown")
 
     async def async_step_discovery(self, discovery_info=None):
         """Handle a flow discovery."""
