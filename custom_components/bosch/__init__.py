@@ -239,14 +239,7 @@ class BoschGatewayEntry:
 
         _LOGGER.debug("Initializing Bosch integration.")
         self._update_lock = asyncio.Lock()
-        
-        # Special handling for POINTTAPI (PoinTT API)
-        if self._device_type == POINTTAPI:
-            from bosch_thermostat_client.gateway.pointtapi import PoinTTAPIGateway
-            BoschGateway = PoinTTAPIGateway
-        else:
-            BoschGateway = bosch.gateway_chooser(device_type=self._device_type)
-        
+        BoschGateway = bosch.gateway_chooser(device_type=self._device_type)
         gateway_kwargs = {
             "session_type": self._protocol,
             "host": self._host,

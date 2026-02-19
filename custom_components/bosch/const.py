@@ -3,11 +3,12 @@ from datetime import timedelta
 
 import voluptuous as vol
 from bosch_thermostat_client.const import DHW, HC, SC, ZN
+from bosch_thermostat_client.const.ivt import IVTAIR
 from bosch_thermostat_client.const.easycontrol import DV
 from homeassistant.const import UnitOfEnergy, UnitOfTemperature
 
 DOMAIN = "bosch"
-POINTTAPI = "POINTTAPI"
+POINTTAPI = IVTAIR  # Use IVTAIR from library which supports OAuth2
 BOSCH_GATEWAY_ENTRY = "BoschGatewayEntry"
 ACCESS_KEY = "access_key"
 ACCESS_TOKEN = "access_token"
@@ -16,6 +17,7 @@ UUID = "uuid"
 
 CONF_PROTOCOL = "http_xmpp"
 CONF_DEVICE_TYPE = "device_type"
+CONF_DEVICE_ID = "device_id"
 CONF_REFRESH_TOKEN = "refresh_token"
 
 GATEWAY = "gateway"

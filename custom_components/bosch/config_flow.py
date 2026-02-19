@@ -25,6 +25,7 @@ from .const import (
     ACCESS_TOKEN,
     REFRESH_TOKEN,
     CONF_DEVICE_TYPE,
+    CONF_DEVICE_ID,
     CONF_PROTOCOL,
     CONF_REFRESH_TOKEN,
     DOMAIN,
@@ -157,7 +158,7 @@ class BoschFlowHandler(config_entries.ConfigFlow):
         """Handle PoinTT API OAuth authentication."""
         errors = {}
         if user_input is not None:
-            device_id = user_input.get(CONF_ADDRESS)
+            device_id = user_input.get(CONF_DEVICE_ID)
             access_token = user_input.get(ACCESS_TOKEN)
             refresh_token = user_input.get(CONF_REFRESH_TOKEN)
             
@@ -176,7 +177,7 @@ class BoschFlowHandler(config_entries.ConfigFlow):
             step_id="pointt_oauth",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_ADDRESS): str,
+                    vol.Required(CONF_DEVICE_ID): str,
                     vol.Required(ACCESS_TOKEN): str,
                     vol.Required(CONF_REFRESH_TOKEN): str,
                 }
@@ -191,13 +192,7 @@ class BoschFlowHandler(config_entries.ConfigFlow):
         self, device_type, session_type, host, access_token, password=None, session=None, refresh_token=None
     ):
         try:
-            # Special handling for POINTTAPI (PoinTT API)
-            if device_type == POINTTAPI:
-                from bosch_thermostat_client.gateway.pointtapi import PoinTTAPIGateway
-                BoschGateway = PoinTTAPIGateway
-            else:
-                BoschGateway = gateway_chooser(device_type)
-            
+            BoschGateway = gateway_chooser(device_type)
             kwargs = {
                 "session_type": session_type,
                 "host": host,
