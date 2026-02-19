@@ -198,9 +198,18 @@ class BoschFlowHandler(config_entries.ConfigFlow):
                 "host": host,
                 "access_token": access_token,
             }
+            
+            # Special handling for Oauth2Gateway (IVTAIR/K30)
+            if device_type == POINTTAPI:
+                # Oauth2Gateway requires session and device_type
+                if session is None:
+                    session = async_get_clientsession(self.hass, verify_ssl=False)
+                kwargs["session"] = session
+                kwargs["device_type"] = device_type
+            
             if password is not None:
                 kwargs["password"] = password
-            if session is not None:
+            if session is not None and device_type != POINTTAPI:
                 kwargs["session"] = session
             if refresh_token is not None:
                 kwargs["refresh_token"] = refresh_token

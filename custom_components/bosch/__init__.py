@@ -246,8 +246,14 @@ class BoschGatewayEntry:
             "access_key": self._access_key,
             "access_token": self._access_token,
         }
-        if self._protocol == HTTP:
+        
+        # Special handling for Oauth2Gateway (IVTAIR/K30)
+        if self._device_type == POINTTAPI:
             gateway_kwargs["session"] = async_get_clientsession(self.hass, verify_ssl=False)
+            gateway_kwargs["device_type"] = self._device_type
+        elif self._protocol == HTTP:
+            gateway_kwargs["session"] = async_get_clientsession(self.hass, verify_ssl=False)
+        
         if self._refresh_token is not None:
             gateway_kwargs["refresh_token"] = self._refresh_token
         
