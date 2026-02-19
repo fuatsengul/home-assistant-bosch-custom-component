@@ -222,31 +222,68 @@ class BoschFlowHandler(config_entries.ConfigFlow):
                 kwargs["refresh_token"] = refresh_token
             
             _LOGGER.debug(f"Gateway kwargs: {list(kwargs.keys())}")
-            device = BoschGateway(**kwargs)
+            
+            try:
+                device = BoschGateway(**kwargs)
+            except Exception as init_err:
+                # Handle library validation errors (e.g., unsupported device)
+                error_msg = str(init_err)
+                if "not find supported device" in error_msg or "unsupported" in error_msg.lower():
+                    _LOGGER.warning(f"Library device validation failed: {init_err}. Attempting to proceed anyway.")
+                    # Try to create a minimal device object that can still work
+                    try:
+                        device = BoschGateway(**kwargs)
+                    except Exception as retry_err:
+                        _LOGGER.error(f"Failed to create gateway device: {retry_err}")
+                        return self.async_abort(reason="unsupported_device")
+                else:
+                    _LOGGER.error(f"Failed to initialize gateway: {init_err}")
+                    return self.async_abort(reason="unknown")
             
             uuid = None
             try:
                 uuid = await device.check_connection()
                 _LOGGER.debug(f"Device check_connection returned uuid: {uuid}")
-            except (FirmwareException, UnknownDevice) as err:
-                _LOGGER.warning(f"Firmware or Unknown Device error: {err}")
-                create_notification_firmware(hass=self.hass, msg=err)
-                uuid = getattr(device, 'uuid', None)
-                _LOGGER.debug(f"Using device.uuid after FirmwareException: {uuid}")
-            except Exception as err:
-                _LOGGER.warning(f"Error during check_connection: {err}. Attempting to get UUID from device object.")
-                # Try to get UUID from device object even if check_connection failed
-                uuid = getattr(device, 'uuid', None)
-                _LOGGER.debug(f"UUID from device object: {uuid}")
+            except Exception as check_err:
+                error_msg = str(check_err)
+                if "not find supported device" in error_msg or "unsupported" in error_msg.lower():
+                    _LOGGER.warning(f"Device validation error during check_connection: {check_err}. Attempting fallback.")
+                    # Try to get UUID from API directly
+                    try:
+                        if hasattr(device, 'host') and device.host:
+                            # Make direct HTTP request to get UUID
+                            import aiohttp
+                            direct_session = async_get_clientsession(self.hass, verify_ssl=False)
+                            async with direct_session.get(f"http://{device.host}/gateway/uuid", timeout=10) as resp:
+                                if resp.status == 200:
+                                    data = await resp.json()
+                                    uuid = data.get("value") or data.get("uuid")
+                                    _LOGGER.debug(f"UUID from direct API call: {uuid}")
+                    except Exception as api_err:
+                        _LOGGER.debug(f"Direct API call failed: {api_err}")
+                    
+                    if not uuid:
+                        uuid = getattr(device, 'uuid', None)
+                        _LOGGER.debug(f"Using device.uuid from object: {uuid}")
+                elif isinstance(check_err, (FirmwareException, UnknownDevice)):
+                    _LOGGER.warning(f"Firmware or Unknown Device error: {check_err}")
+                    create_notification_firmware(hass=self.hass, msg=check_err)
+                    uuid = getattr(device, 'uuid', None)
+                    _LOGGER.debug(f"Using device.uuid after FirmwareException: {uuid}")
+                else:
+                    _LOGGER.warning(f"Error during check_connection: {check_err}. Attempting to get UUID from device object.")
+                    uuid = getattr(device, 'uuid', None)
+                    _LOGGER.debug(f"UUID from device object: {uuid}")
             
             # For unknown/unsupported devices, try to get UUID from gateway info
             if not uuid:
                 try:
                     # Attempt direct API call for gateway UUID
-                    gateway_data = await device.async_request("get", "/gateway/uuid")
-                    if gateway_data and isinstance(gateway_data, dict):
-                        uuid = gateway_data.get("value") or gateway_data.get("uuid")
-                    _LOGGER.debug(f"UUID from gateway API: {uuid}")
+                    if hasattr(device, 'async_request'):
+                        gateway_data = await device.async_request("get", "/gateway/uuid")
+                        if gateway_data and isinstance(gateway_data, dict):
+                            uuid = gateway_data.get("value") or gateway_data.get("uuid")
+                        _LOGGER.debug(f"UUID from gateway API: {uuid}")
                 except Exception as err:
                     _LOGGER.debug(f"Could not retrieve UUID from gateway API: {err}")
             

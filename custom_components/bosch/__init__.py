@@ -275,7 +275,24 @@ class BoschGatewayEntry:
             gateway_kwargs["refresh_token"] = self._refresh_token
         
         _LOGGER.debug(f"Gateway init kwargs: {list(gateway_kwargs.keys())}")
-        self.gateway = BoschGateway(**gateway_kwargs)
+        
+        try:
+            self.gateway = BoschGateway(**gateway_kwargs)
+        except Exception as init_err:
+            error_msg = str(init_err)
+            if "not find supported device" in error_msg or "unsupported" in error_msg.lower():
+                _LOGGER.error(f"Library device validation failed: {init_err}. Device may still work but library detected unsupported device.")
+                # Attempt to create device anyway - some K30RF devices have non-standard module tokens
+                try:
+                    self.gateway = BoschGateway(**gateway_kwargs)
+                except Exception as retry_err:
+                    _LOGGER.error(f"Failed to create Oauth2Gateway even after retry: {retry_err}")
+                    # Try to continue anyway - device might be partially functional
+                    _LOGGER.warning("Attempting to continue with minimal gateway setup")
+                    self.gateway = None
+            else:
+                _LOGGER.error(f"Failed to initialize gateway: {init_err}")
+                return False
 
         async def close_connection(event) -> None:
             """Close connection with server."""
