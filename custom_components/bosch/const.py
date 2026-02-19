@@ -2,11 +2,12 @@
 from datetime import timedelta
 
 import voluptuous as vol
-from bosch_thermostat_client.const import DHW, HC, SC, ZN, POINTTAPI
+from bosch_thermostat_client.const import DHW, HC, SC, ZN
 from bosch_thermostat_client.const.easycontrol import DV
 from homeassistant.const import UnitOfEnergy, UnitOfTemperature
 
 DOMAIN = "bosch"
+POINTTAPI = "POINTTAPI"
 BOSCH_GATEWAY_ENTRY = "BoschGatewayEntry"
 ACCESS_KEY = "access_key"
 ACCESS_TOKEN = "access_token"
