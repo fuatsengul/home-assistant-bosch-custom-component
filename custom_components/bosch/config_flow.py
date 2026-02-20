@@ -3,7 +3,7 @@ import logging
 
 import voluptuous as vol
 from bosch_thermostat_client import gateway_chooser
-from bosch_thermostat_client.const import HTTP, XMPP
+from bosch_thermostat_client.const import HTTP, XMPP, OAUTH2
 from bosch_thermostat_client.const.easycontrol import EASYCONTROL
 from bosch_thermostat_client.const.ivt import IVT, IVT_MBLAN
 from bosch_thermostat_client.const.nefit import NEFIT
@@ -34,7 +34,7 @@ from .const import (
 )
 
 DEVICE_TYPE = [NEFIT, IVT, EASYCONTROL, IVT_MBLAN, POINTTAPI]
-PROTOCOLS = [HTTP, XMPP]
+PROTOCOLS = [HTTP, XMPP, OAUTH2]
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -97,6 +97,9 @@ class BoschFlowHandler(config_entries.ConfigFlow):
         errors = {}
         if user_input is not None:
             self._protocol = user_input[CONF_PROTOCOL]
+            # If OAuth2 is selected, go to OAuth setup instead of config form
+            if self._protocol == OAUTH2:
+                return await self.async_step_oauth2_config()
             return self.async_show_form(
                 step_id=f"{self._protocol.lower()}_config",
                 data_schema=vol.Schema(
@@ -131,6 +134,40 @@ class BoschFlowHandler(config_entries.ConfigFlow):
                 access_token=self._access_token,
                 password=self._password,
             )
+
+    async def async_step_oauth2_config(self, user_input=None):
+        """Handle OAuth2 configuration for IVT heat pump devices."""
+        errors = {}
+        if user_input is not None:
+            device_id = user_input.get(CONF_DEVICE_ID)
+            access_token = user_input.get(ACCESS_TOKEN)
+            refresh_token = user_input.get(CONF_REFRESH_TOKEN)
+            
+            if not device_id or not access_token or not refresh_token:
+                errors["base"] = "invalid_oauth_tokens"
+            else:
+                return await self.configure_gateway(
+                    device_type=self._choose_type,
+                    session_type=HTTP,
+                    host=device_id,
+                    access_token=access_token,
+                    refresh_token=refresh_token,
+                )
+        
+        return self.async_show_form(
+            step_id="oauth2_config",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_DEVICE_ID): str,
+                    vol.Required(ACCESS_TOKEN): str,
+                    vol.Required(CONF_REFRESH_TOKEN): str,
+                }
+            ),
+            description_placeholders={
+                "oauth_setup_url": "https://github.com/deric/bosch-thermostat-client-python/blob/k30/examples/pointtapi_oauth_setup.py",
+            },
+            errors=errors,
+        )
 
     async def async_step_xmpp_config(self, user_input=None):
         if user_input is not None:
