@@ -3,7 +3,7 @@ import logging
 
 import voluptuous as vol
 from bosch_thermostat_client import gateway_chooser
-from bosch_thermostat_client.const import HTTP, XMPP, OAUTH2
+from bosch_thermostat_client.const import HTTP, XMPP
 from bosch_thermostat_client.const.easycontrol import EASYCONTROL
 from bosch_thermostat_client.const.ivt import IVT, IVT_MBLAN
 from bosch_thermostat_client.const.nefit import NEFIT
@@ -34,7 +34,7 @@ from .const import (
 )
 
 DEVICE_TYPE = [NEFIT, IVT, EASYCONTROL, IVT_MBLAN, POINTTAPI]
-PROTOCOLS = [HTTP, XMPP, OAUTH2]
+PROTOCOLS = [HTTP, XMPP, "OAUTH2"]
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -98,7 +98,7 @@ class BoschFlowHandler(config_entries.ConfigFlow):
         if user_input is not None:
             self._protocol = user_input[CONF_PROTOCOL]
             # If OAuth2 is selected, go to OAuth setup instead of config form
-            if self._protocol == OAUTH2:
+            if self._protocol == "OAUTH2":
                 return await self.async_step_oauth2_config()
             return self.async_show_form(
                 step_id=f"{self._protocol.lower()}_config",
