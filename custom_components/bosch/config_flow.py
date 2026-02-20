@@ -148,7 +148,7 @@ class BoschFlowHandler(config_entries.ConfigFlow):
             else:
                 return await self.configure_gateway(
                     device_type=self._choose_type,
-                    session_type=HTTP,
+                    session_type="OAUTH2",
                     host=device_id,
                     access_token=access_token,
                     refresh_token=refresh_token,
