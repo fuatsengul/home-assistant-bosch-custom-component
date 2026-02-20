@@ -220,6 +220,7 @@ class BoschGatewayEntry:
         self._refresh_token = refresh_token
         self._device_type = device_type
         self._protocol = protocol
+        _LOGGER.info(f"[BoschGatewayEntry.__init__] protocol param: '{protocol}', device_type: '{device_type}', refresh_token: {refresh_token is not None}")
         self.config_entry = entry
         self._debug_service_registered = False
         self.gateway = None
