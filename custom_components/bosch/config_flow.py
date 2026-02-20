@@ -350,6 +350,7 @@ class BoschFlowHandler(config_entries.ConfigFlow):
                 return self.async_abort(reason="unknown")
             
             _LOGGER.debug("Adding Bosch entry.")
+            _LOGGER.info(f"[Config] Saving config entry with session_type={session_type}")
             data = {
                 CONF_ADDRESS: host,  # Use input host instead of device.host in case device.host is not set
                 UUID: uuid,
@@ -357,6 +358,7 @@ class BoschFlowHandler(config_entries.ConfigFlow):
                 CONF_DEVICE_TYPE: self._choose_type,
                 CONF_PROTOCOL: session_type,
             }
+            _LOGGER.info(f"[Config] Config entry data: CONF_DEVICE_TYPE={data[CONF_DEVICE_TYPE]}, CONF_PROTOCOL={data[CONF_PROTOCOL]}")
             # Fallback to host if device.host not available
             if hasattr(device, 'host') and device.host:
                 data[CONF_ADDRESS] = device.host

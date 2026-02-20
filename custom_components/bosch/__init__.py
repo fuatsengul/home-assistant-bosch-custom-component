@@ -239,16 +239,24 @@ class BoschGatewayEntry:
 
         _LOGGER.debug("Initializing Bosch integration.")
         _LOGGER.debug(f"Device type: {self._device_type}, Protocol: {self._protocol}, POINTTAPI: {POINTTAPI}, match: {self._device_type == POINTTAPI}")
+        _LOGGER.info(f"[Init] Protocol value: '{self._protocol}' (type: {type(self._protocol).__name__}), checking OAUTH2: {self._protocol == 'OAUTH2'}")
         self._update_lock = asyncio.Lock()
         
         try:
             # If using OAuth2 protocol or POINTTAPI device type, use Oauth2Gateway
             if self._protocol == "OAUTH2" or self._device_type == POINTTAPI:
-                from bosch_thermostat_client.gateway.oauth2 import Oauth2Gateway
-                BoschGateway = Oauth2Gateway
-                _LOGGER.debug(f"Using Oauth2Gateway for device_type={self._device_type}, protocol={self._protocol}")
+                _LOGGER.info(f"[Init] Condition matched! Protocol={self._protocol}, POINTTAPI={self._device_type == POINTTAPI}")
+                try:
+                    from bosch_thermostat_client.gateway.oauth2 import Oauth2Gateway
+                    BoschGateway = Oauth2Gateway
+                    _LOGGER.info(f"✓ [Init] Successfully imported and using Oauth2Gateway")
+                except ImportError as import_err:
+                    _LOGGER.error(f"Failed to import Oauth2Gateway: {import_err}")
+                    raise
             else:
+                _LOGGER.info(f"[Init] Condition NOT matched. Protocol={self._protocol}, POINTTAPI={self._device_type == POINTTAPI}")
                 BoschGateway = bosch.gateway_chooser(device_type=self._device_type)
+                _LOGGER.info(f"[Init] Using gateway_chooser for device_type={self._device_type}")
         except (KeyError, ValueError) as err:
             _LOGGER.warning(f"Device type {self._device_type} not found in gateway_chooser, attempting POINTTAPI as fallback: {err}")
             # Fallback for unknown device types (like K30RF with brand='unknown')
