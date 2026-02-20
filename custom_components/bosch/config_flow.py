@@ -229,34 +229,45 @@ class BoschFlowHandler(config_entries.ConfigFlow):
         self, device_type, session_type, host, access_token, password=None, session=None, refresh_token=None
     ):
         try:
-            BoschGateway = gateway_chooser(device_type)
-            _LOGGER.debug(f"Configuring gateway: device_type={device_type}, POINTTAPI={POINTTAPI}, match={device_type == POINTTAPI}")
+            # If OAUTH2 protocol is selected, use Oauth2Gateway regardless of device_type
+            if session_type == "OAUTH2":
+                from bosch_thermostat_client.gateway.oauth2 import Oauth2Gateway
+                BoschGateway = Oauth2Gateway
+                _LOGGER.debug(f"Using Oauth2Gateway for device_type={device_type} with OAuth2 protocol")
+            else:
+                BoschGateway = gateway_chooser(device_type)
+                _LOGGER.debug(f"Configuring gateway: device_type={device_type}, session_type={session_type}")
             
             # Create session early if needed
-            if session is None and (device_type == POINTTAPI or session_type == HTTP):
+            if session is None and (device_type == POINTTAPI or session_type in (HTTP, "OAUTH2")):
                 session = async_get_clientsession(self.hass, verify_ssl=False)
             
-            # Build kwargs based on device type
+            # Build kwargs based on protocol/device type
             kwargs = {
                 "host": host,
                 "access_token": access_token,
             }
             
-            # Add parameters based on device type
-            if device_type == POINTTAPI:
+            # Add parameters based on protocol type
+            if session_type == "OAUTH2":
+                # OAuth2Gateway config
+                kwargs["session"] = session
+                kwargs["device_type"] = device_type
+                if refresh_token is not None:
+                    kwargs["refresh_token"] = refresh_token
+            elif device_type == POINTTAPI:
                 # Oauth2Gateway for K30/IVTAIR
                 kwargs["session"] = session
                 kwargs["device_type"] = device_type
+                if refresh_token is not None:
+                    kwargs["refresh_token"] = refresh_token
             else:
-                # Other device types
+                # Other device types (IVT with HTTP/XMPP, NEFIT, EASYCONTROL)
                 kwargs["session_type"] = session_type
                 if session is not None:
                     kwargs["session"] = session
                 if password is not None:
                     kwargs["password"] = password
-            
-            if refresh_token is not None:
-                kwargs["refresh_token"] = refresh_token
             
             _LOGGER.debug(f"Gateway kwargs: {list(kwargs.keys())}")
             
