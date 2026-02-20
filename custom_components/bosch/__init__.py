@@ -381,6 +381,12 @@ class BoschGatewayEntry:
             supported_bosch = await self.gateway.get_capabilities()
             _LOGGER.debug(f"Bosch supported capabilities: {supported_bosch}")
             for supported in supported_bosch:
+                if supported not in SUPPORTED_PLATFORMS:
+                    _LOGGER.warning(
+                        "Circuit type '%s' is not supported by this custom component. Skipping.",
+                        supported
+                    )
+                    continue
                 elements = SUPPORTED_PLATFORMS[supported]
                 for element in elements:
                     if element not in self.supported_platforms:
