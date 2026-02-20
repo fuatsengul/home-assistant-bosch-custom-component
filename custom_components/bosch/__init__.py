@@ -238,11 +238,17 @@ class BoschGatewayEntry:
         import bosch_thermostat_client as bosch
 
         _LOGGER.debug("Initializing Bosch integration.")
-        _LOGGER.debug(f"Device type: {self._device_type}, POINTTAPI: {POINTTAPI}, match: {self._device_type == POINTTAPI}")
+        _LOGGER.debug(f"Device type: {self._device_type}, Protocol: {self._protocol}, POINTTAPI: {POINTTAPI}, match: {self._device_type == POINTTAPI}")
         self._update_lock = asyncio.Lock()
         
         try:
-            BoschGateway = bosch.gateway_chooser(device_type=self._device_type)
+            # If using OAuth2 protocol or POINTTAPI device type, use Oauth2Gateway
+            if self._protocol == "OAUTH2" or self._device_type == POINTTAPI:
+                from bosch_thermostat_client.gateway.oauth2 import Oauth2Gateway
+                BoschGateway = Oauth2Gateway
+                _LOGGER.debug(f"Using Oauth2Gateway for device_type={self._device_type}, protocol={self._protocol}")
+            else:
+                BoschGateway = bosch.gateway_chooser(device_type=self._device_type)
         except (KeyError, ValueError) as err:
             _LOGGER.warning(f"Device type {self._device_type} not found in gateway_chooser, attempting POINTTAPI as fallback: {err}")
             # Fallback for unknown device types (like K30RF with brand='unknown')
@@ -258,13 +264,13 @@ class BoschGatewayEntry:
             "access_token": self._access_token,
         }
         
-        # Add parameters based on device type
-        if self._device_type == POINTTAPI:
-            # Oauth2Gateway for K30/IVTAIR
+        # Add parameters based on protocol/device type
+        if self._protocol == "OAUTH2" or self._device_type == POINTTAPI:
+            # Oauth2Gateway for OAuth2 protocol or POINTTAPI device
             gateway_kwargs["session"] = async_get_clientsession(self.hass, verify_ssl=False)
             gateway_kwargs["device_type"] = self._device_type
         else:
-            # Other device types
+            # Other device types (HTTP/XMPP)
             gateway_kwargs["session_type"] = self._protocol
             if self._access_key:
                 gateway_kwargs["access_key"] = self._access_key
