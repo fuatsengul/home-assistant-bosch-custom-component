@@ -143,6 +143,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Create entry for Bosch thermostat device."""
     _LOGGER.info(f"Setting up Bosch component version {LIBVERSION}.")
     uuid = entry.data[UUID]
+    
+    # Log the entry data for debugging
+    _LOGGER.info(f"[Setup Entry] Keys in entry.data: {list(entry.data.keys())}")
+    _LOGGER.info(f"[Setup Entry] REFRESH_TOKEN constant: '{REFRESH_TOKEN}'")
+    _LOGGER.info(f"[Setup Entry] CONF_REFRESH_TOKEN constant: '{CONF_REFRESH_TOKEN}'")
+    refresh_token_value = entry.data.get(REFRESH_TOKEN)
+    _LOGGER.info(f"[Setup Entry] refresh_token from entry.data.get(REFRESH_TOKEN): {refresh_token_value is not None}")
+    if refresh_token_value:
+        _LOGGER.debug(f"[Setup Entry] refresh_token value (first 30 chars): {refresh_token_value[:30]}...")
+    
     entry.async_on_unload(entry.add_update_listener(async_update_options))
     gateway_entry = BoschGatewayEntry(
         hass=hass,
