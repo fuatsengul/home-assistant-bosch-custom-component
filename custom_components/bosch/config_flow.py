@@ -272,35 +272,53 @@ class BoschFlowHandler(config_entries.ConfigFlow):
             _LOGGER.debug(f"Gateway kwargs: {list(kwargs.keys())}")
             
             try:
+                _LOGGER.debug(f"Attempting to create {BoschGateway.__name__} with kwargs: {list(kwargs.keys())}")
                 device = BoschGateway(**kwargs)
+                _LOGGER.debug(f"Gateway created successfully: {type(device).__name__}")
             except Exception as init_err:
                 # Handle library validation errors (e.g., unsupported device)
+                _LOGGER.error(f"Gateway creation failed with error: {init_err}")
+                _LOGGER.error(f"Error type: {type(init_err).__name__}")
+                import traceback
+                _LOGGER.error(f"Full traceback: {traceback.format_exc()}")
+                
                 error_msg = str(init_err)
                 if "not find supported device" in error_msg or "unsupported" in error_msg.lower():
                     _LOGGER.warning(f"Library device validation failed: {init_err}. Attempting to proceed anyway.")
                     # Try to create a minimal device object that can still work
                     try:
                         device = BoschGateway(**kwargs)
+                        _LOGGER.debug(f"Gateway created on retry")
                     except Exception as retry_err:
-                        _LOGGER.error(f"Failed to create gateway device: {retry_err}")
+                        _LOGGER.error(f"Failed to create gateway device on retry: {retry_err}")
                         return self.async_abort(reason="unsupported_device")
                 else:
                     _LOGGER.error(f"Failed to initialize gateway: {init_err}")
-                    return self.async_abort(reason="unknown")
+                    return self.async_abort(reason="cannot_connect")
             
             uuid = None
             try:
                 # For OAuth2, skip full check_connection to preserve refresh_token
-                # Just validate that we can create the gateway object
+                # But ensure device object has required attributes for config flow
                 if session_type == "OAUTH2":
                     _LOGGER.debug("OAuth2 config flow: Skipping full connection check to preserve refresh_token")
                     uuid = host  # Use device_id as UUID for OAuth2
-                    device.uuid = uuid
-                    if hasattr(device, '_device_info'):
-                        device._device_info = {"name": "K30 RF Gateway (Heat Pump)", "uuid": uuid}
+                    
+                    # Ensure device has required attributes that config flow expects
+                    if not hasattr(device, 'access_token'):
+                        device.access_token = access_token
+                    if not hasattr(device, 'uuid'):
+                        device.uuid = uuid
+                    
+                    _LOGGER.debug(f"OAuth2 device configured - UUID: {uuid}")
                 else:
+                    _LOGGER.debug("Non-OAuth2 protocol: Performing full connection check")
                     uuid = await device.check_connection()
-                _LOGGER.debug(f"Device check_connection returned uuid: {uuid}")
+                    _LOGGER.debug(f"Device check_connection returned uuid: {uuid}")
+                
+                if not uuid:
+                    _LOGGER.error("UUID is None or empty after device configuration")
+                    return self.async_abort(reason="cannot_connect")
             except Exception as check_err:
                 error_msg = str(check_err)
                 if "not find supported device" in error_msg or "unsupported" in error_msg.lower():
