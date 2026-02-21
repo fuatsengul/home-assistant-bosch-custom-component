@@ -125,9 +125,6 @@ class BoschWaterHeater(BoschClimateWaterEntity, WaterHeaterEntity):
         except (AttributeError, TypeError):
             # If ha_mode is not available, just support operation mode
             return WaterHeaterEntityFeature.OPERATION_MODE
-            WaterHeaterEntityFeature.TARGET_TEMPERATURE
-            | WaterHeaterEntityFeature.OPERATION_MODE
-        )
 
     async def async_set_temperature(self, **kwargs):
         """Set new target temperature."""
