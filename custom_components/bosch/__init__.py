@@ -302,27 +302,39 @@ class BoschGatewayEntry:
         
         try:
             self.gateway = BoschGateway(**gateway_kwargs)
-            # Patch the gateway to persist new tokens after refresh
+            # Simple token sync: patch the refresh method to update config entry
             if hasattr(self.gateway, '_connector') and hasattr(self.gateway._connector, '_refresh_access_token'):
                 orig_refresh = self.gateway._connector._refresh_access_token
-                async def wrapped_refresh(*args, **kwargs):
+                
+                async def token_sync_refresh(*args, **kwargs):
+                    _LOGGER.debug("[Token Sync] Refreshing access token...")
                     result = await orig_refresh(*args, **kwargs)
-                    # After refresh, update config entry if token changed
-                    new_refresh_token = getattr(self.gateway._connector, '_refresh_token', None)
-                    new_access_token = getattr(self.gateway._connector, '_access_token', None)
-                    if new_refresh_token and new_refresh_token != self._refresh_token:
-                        _LOGGER.info("[Token Sync] Persisting new refresh_token to config entry.")
-                        data = dict(self.config_entry.data)
-                        data[REFRESH_TOKEN] = new_refresh_token
-                        if new_access_token:
-                            data[ACCESS_TOKEN] = new_access_token
-                        self._refresh_token = new_refresh_token
-                        self._access_token = new_access_token
-                        self.hass.async_create_task(
-                            self.hass.config_entries.async_update_entry(self.config_entry, data=data)
-                        )
+                    
+                    # Update config entry with fresh tokens after successful refresh
+                    if result:
+                        new_refresh_token = getattr(self.gateway._connector, '_refresh_token', None)
+                        new_access_token = getattr(self.gateway._connector, '_access_token', None)
+                        
+                        if new_refresh_token and new_refresh_token != self._refresh_token:
+                            _LOGGER.info("[Token Sync] Updating config entry with fresh tokens")
+                            new_data = dict(self.config_entry.data)
+                            new_data[REFRESH_TOKEN] = new_refresh_token
+                            if new_access_token:
+                                new_data[ACCESS_TOKEN] = new_access_token
+                            
+                            # Update local copies
+                            self._refresh_token = new_refresh_token
+                            self._access_token = new_access_token
+                            
+                            # Update config entry asynchronously
+                            self.hass.async_create_task(
+                                self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+                            )
+                    
                     return result
-                self.gateway._connector._refresh_access_token = wrapped_refresh
+                
+                # Replace the refresh method
+                self.gateway._connector._refresh_access_token = token_sync_refresh
         except Exception as init_err:
             error_msg = str(init_err)
             if "not find supported device" in error_msg or "unsupported" in error_msg.lower():

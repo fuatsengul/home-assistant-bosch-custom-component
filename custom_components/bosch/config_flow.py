@@ -367,6 +367,17 @@ class BoschFlowHandler(config_entries.ConfigFlow):
                 data[ACCESS_KEY] = device.access_key
             if refresh_token is not None:
                 data[CONF_REFRESH_TOKEN] = refresh_token
+            
+            # Capture refreshed tokens from the device connector after successful connection
+            if hasattr(device, '_connector') and hasattr(device._connector, '_refresh_token'):
+                fresh_refresh_token = getattr(device._connector, '_refresh_token', None)
+                fresh_access_token = getattr(device._connector, '_access_token', None)
+                if fresh_refresh_token and fresh_refresh_token != refresh_token:
+                    _LOGGER.info("[Config Flow] Using refreshed tokens from successful connection")
+                    data[CONF_REFRESH_TOKEN] = fresh_refresh_token
+                    if fresh_access_token:
+                        data[ACCESS_TOKEN] = fresh_access_token
+            
             return self.async_create_entry(
                 title=device.device_name or "Unknown model",
                 data=data,
