@@ -520,6 +520,14 @@ class BoschGatewayEntry:
     async def component_update(self, component_type=None, event_time=None):
         """Update data from HC, DHW, ZN, Sensors, Switch."""
         if component_type in self.supported_platforms:
+            # Guard: check if component has been registered before accessing
+            if component_type not in self.hass.data[DOMAIN][self.uuid]:
+                _LOGGER.debug(
+                    "Component %s not yet registered in hass.data, skipping update",
+                    component_type,
+                )
+                return
+                
             updated = False
             entities = self.hass.data[DOMAIN][self.uuid][component_type]
             for entity in entities:
