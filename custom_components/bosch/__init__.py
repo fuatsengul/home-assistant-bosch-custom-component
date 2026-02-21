@@ -236,6 +236,7 @@ class BoschGatewayEntry:
         self.prefs = None
         self._initial_update = False
         self._signal_registered = False
+        self._initialized = False
         self.supported_platforms = []
         self._update_lock = None
 
@@ -311,7 +312,8 @@ class BoschGatewayEntry:
                     result = await orig_refresh(*args, **kwargs)
                     
                     # Update config entry with fresh tokens after successful refresh
-                    if result:
+                    # Only sync if initialization is complete to avoid reload loops
+                    if result and hasattr(self, '_initialized') and self._initialized:
                         new_refresh_token = getattr(self.gateway._connector, '_refresh_token', None)
                         new_access_token = getattr(self.gateway._connector, '_access_token', None)
                         
@@ -383,6 +385,7 @@ class BoschGatewayEntry:
                 "Bosch component registered with platforms %s.",
                 self.supported_platforms,
             )
+            self._initialized = True
             return True
         return False
 
