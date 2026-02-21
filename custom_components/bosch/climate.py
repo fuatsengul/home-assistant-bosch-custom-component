@@ -142,12 +142,19 @@ class BoschThermostat(BoschClimateWaterEntity, ClimateEntity):
     @property
     def preset_modes(self):
         """Return available preset modes."""
-        return self._bosch_object.preset_modes
+        try:
+            return self._bosch_object.preset_modes
+        except (AttributeError, KeyError, TypeError):
+            # If preset modes not available, return empty list
+            return []
 
     @property
     def preset_mode(self):
         """Return current preset mode."""
-        return self._bosch_object.preset_mode
+        try:
+            return self._bosch_object.preset_mode
+        except (AttributeError, KeyError, TypeError):
+            return None
 
     async def async_set_preset_mode(self, preset_mode):
         """Set new target preset mode."""
