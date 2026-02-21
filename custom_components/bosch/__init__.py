@@ -296,6 +296,11 @@ class BoschGatewayEntry:
                 gateway_kwargs["session"] = async_get_clientsession(self.hass, verify_ssl=False)
         
         if self._refresh_token is not None:
+            gateway_kwargs["refresh_token"] = self._refresh_token
+        
+        _LOGGER.debug(f"Gateway init kwargs: {list(gateway_kwargs.keys())}")
+        
+        try:
             self.gateway = BoschGateway(**gateway_kwargs)
             # Patch the gateway to persist new tokens after refresh
             if hasattr(self.gateway, '_connector') and hasattr(self.gateway._connector, '_refresh_access_token'):
@@ -318,11 +323,6 @@ class BoschGatewayEntry:
                         )
                     return result
                 self.gateway._connector._refresh_access_token = wrapped_refresh
-        
-        _LOGGER.debug(f"Gateway init kwargs: {list(gateway_kwargs.keys())}")
-        
-        try:
-            self.gateway = BoschGateway(**gateway_kwargs)
         except Exception as init_err:
             error_msg = str(init_err)
             if "not find supported device" in error_msg or "unsupported" in error_msg.lower():
