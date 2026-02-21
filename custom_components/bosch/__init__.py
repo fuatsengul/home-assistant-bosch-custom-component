@@ -147,7 +147,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     # Log the entry data for debugging
     _LOGGER.info(f"[Setup Entry] Keys in entry.data: {list(entry.data.keys())}")
     _LOGGER.info(f"[Setup Entry] REFRESH_TOKEN constant: '{REFRESH_TOKEN}'")
-    _LOGGER.info(f"[Setup Entry] CONF_REFRESH_TOKEN constant: '{CONF_REFRESH_TOKEN}'")
     refresh_token_value = entry.data.get(REFRESH_TOKEN)
     _LOGGER.info(f"[Setup Entry] refresh_token from entry.data.get(REFRESH_TOKEN): {refresh_token_value is not None}")
     if refresh_token_value:
