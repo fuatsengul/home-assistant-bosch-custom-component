@@ -296,7 +296,28 @@ class BoschGatewayEntry:
                 gateway_kwargs["session"] = async_get_clientsession(self.hass, verify_ssl=False)
         
         if self._refresh_token is not None:
-            gateway_kwargs["refresh_token"] = self._refresh_token
+            self.gateway = BoschGateway(**gateway_kwargs)
+            # Patch the gateway to persist new tokens after refresh
+            if hasattr(self.gateway, '_connector') and hasattr(self.gateway._connector, '_refresh_access_token'):
+                orig_refresh = self.gateway._connector._refresh_access_token
+                async def wrapped_refresh(*args, **kwargs):
+                    result = await orig_refresh(*args, **kwargs)
+                    # After refresh, update config entry if token changed
+                    new_refresh_token = getattr(self.gateway._connector, '_refresh_token', None)
+                    new_access_token = getattr(self.gateway._connector, '_access_token', None)
+                    if new_refresh_token and new_refresh_token != self._refresh_token:
+                        _LOGGER.info("[Token Sync] Persisting new refresh_token to config entry.")
+                        data = dict(self.config_entry.data)
+                        data[REFRESH_TOKEN] = new_refresh_token
+                        if new_access_token:
+                            data[ACCESS_TOKEN] = new_access_token
+                        self._refresh_token = new_refresh_token
+                        self._access_token = new_access_token
+                        self.hass.async_create_task(
+                            self.hass.config_entries.async_update_entry(self.config_entry, data=data)
+                        )
+                    return result
+                self.gateway._connector._refresh_access_token = wrapped_refresh
         
         _LOGGER.debug(f"Gateway init kwargs: {list(gateway_kwargs.keys())}")
         
