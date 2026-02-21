@@ -111,13 +111,20 @@ class BoschWaterHeater(BoschClimateWaterEntity, WaterHeaterEntity):
     @property
     def supported_features(self):
         """Return the list of supported features."""
-        if (
-            self._bosch_object.ha_mode == STATE_OFF
-            or self._bosch_object.setpoint == STATE_OFF
-            or not self._bosch_object.support_target_temp
-        ):
+        try:
+            if (
+                self._bosch_object.ha_mode == STATE_OFF
+                or self._bosch_object.setpoint == STATE_OFF
+                or not self._bosch_object.support_target_temp
+            ):
+                return WaterHeaterEntityFeature.OPERATION_MODE
+            return (
+                WaterHeaterEntityFeature.OPERATION_MODE
+                | WaterHeaterEntityFeature.TARGET_TEMPERATURE
+            )
+        except (AttributeError, TypeError):
+            # If ha_mode is not available, just support operation mode
             return WaterHeaterEntityFeature.OPERATION_MODE
-        return (
             WaterHeaterEntityFeature.TARGET_TEMPERATURE
             | WaterHeaterEntityFeature.OPERATION_MODE
         )
