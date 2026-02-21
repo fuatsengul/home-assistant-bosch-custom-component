@@ -326,10 +326,12 @@ class BoschGatewayEntry:
                             self._refresh_token = new_refresh_token
                             self._access_token = new_access_token
                             
-                            # Update config entry asynchronously
-                            self.hass.async_create_task(
-                                self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
-                            )
+                            # Update config entry directly - no task creation needed
+                            try:
+                                await self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+                                _LOGGER.debug("[Token Sync] Config entry updated successfully")
+                            except Exception as e:
+                                _LOGGER.error(f"[Token Sync] Failed to update config entry: {e}")
                     
                     return result
                 
