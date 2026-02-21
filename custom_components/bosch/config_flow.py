@@ -290,7 +290,16 @@ class BoschFlowHandler(config_entries.ConfigFlow):
             
             uuid = None
             try:
-                uuid = await device.check_connection()
+                # For OAuth2, skip full check_connection to preserve refresh_token
+                # Just validate that we can create the gateway object
+                if session_type == "OAUTH2":
+                    _LOGGER.debug("OAuth2 config flow: Skipping full connection check to preserve refresh_token")
+                    uuid = host  # Use device_id as UUID for OAuth2
+                    device.uuid = uuid
+                    if hasattr(device, '_device_info'):
+                        device._device_info = {"name": "K30 RF Gateway (Heat Pump)", "uuid": uuid}
+                else:
+                    uuid = await device.check_connection()
                 _LOGGER.debug(f"Device check_connection returned uuid: {uuid}")
             except Exception as check_err:
                 error_msg = str(check_err)
