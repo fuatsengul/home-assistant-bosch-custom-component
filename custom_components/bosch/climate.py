@@ -8,7 +8,6 @@ from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate.const import (
     HVACAction,
     ClimateEntityFeature,
-    HVACMode,
 )
 from homeassistant.const import ATTR_TEMPERATURE
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -107,22 +106,11 @@ class BoschThermostat(BoschClimateWaterEntity, ClimateEntity):
     @property
     def supported_features(self):
         """Return the list of supported features."""
-        features = ClimateEntityFeature.TARGET_TEMPERATURE
-        
-        # Add HVAC mode support if modes are available
-        if self._hvac_modes and len(self._hvac_modes) > 0:
-            features |= ClimateEntityFeature.TURN_ON
-            features |= ClimateEntityFeature.TURN_OFF
-        
-        # Add preset mode support if available
-        if self._bosch_object.support_presets:
-            features |= ClimateEntityFeature.PRESET_MODE
-        
-        _LOGGER.debug(
-            "HC %s supported features: %s, modes: %s",
-            self._name, features, self._hvac_modes
+        return ClimateEntityFeature.TARGET_TEMPERATURE | (
+            ClimateEntityFeature.PRESET_MODE
+            if self._bosch_object.support_presets
+            else 0
         )
-        return features
 
     async def async_set_hvac_mode(self, hvac_mode):
         """Set operation mode."""
