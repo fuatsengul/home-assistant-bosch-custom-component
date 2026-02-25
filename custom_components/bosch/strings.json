@@ -29,10 +29,20 @@
                     "access_token": "Access token",
                     "password": "Password"
                 }
+              },
+            "pointt_oauth": {
+                "title": "Bosch IVT AIR (K30) - OAuth2 Cloud Configuration",
+                "description": "Configure your Bosch IVT AIR (K30 RF module) for cloud-based control via OAuth2.\n\nTo obtain your OAuth tokens:\n1. Run the OAuth setup script: https://github.com/deric/bosch-thermostat-client-python/blob/k30/examples/pointtapi_oauth_setup.py\n2. The script will guide you through the authentication process\n3. Copy the device ID, access token, and refresh token from the generated tokens.json file",
+                "data": {
+                    "device_id": "Device ID (gateway UUID)",
+                    "access_token": "OAuth Access Token",
+                    "refresh_token": "OAuth Refresh Token"
+                }
               }
         },
         "error": {
-            "service_unavailable": "No service available"
+            "service_unavailable": "No service available",
+            "invalid_oauth_tokens": "Invalid OAuth tokens. Please provide valid access token and refresh token."
         },
         "abort": {
             "faulty_credentials": "Bad user credentials or wrong IP",

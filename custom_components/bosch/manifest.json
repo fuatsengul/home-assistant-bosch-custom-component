@@ -5,9 +5,9 @@
   "issue_tracker": "https://github.com/bosch-thermostat/home-assistant-bosch-custom-component/issues",
   "dependencies": ["network", "persistent_notification"],
   "after_dependencies": ["http", "recorder"],
-  "codeowners": ["@pszafer"],
-  "requirements": ["bosch-thermostat-client==v0.28.2"],
-  "version": "0.28.2",
+  "codeowners": ["@fuatsengul"],
+  "requirements": ["bosch-thermostat-client @ git+https://github.com/fuatsengul/bosch-thermostat-client-python@k30"],
+  "version": "0.0.1",
   "zeroconf": ["_buderus._tcp.local."],
   "config_flow": true,
   "iot_class": "cloud_polling"

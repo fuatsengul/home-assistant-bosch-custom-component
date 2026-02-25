@@ -87,6 +87,11 @@ class BoschWaterHeater(BoschClimateWaterEntity, WaterHeaterEntity):
         if self._bosch_object.schedule:
             data[SWITCHPOINT] = self._bosch_object.schedule.active_program
         data[BOSCH_STATE] = self._state
+        # Add current operation mode (MANUAL, AUTO, etc.)
+        try:
+            data['operation_mode'] = self._bosch_object._op_mode.current_mode
+        except (AttributeError, TypeError):
+            pass
         return data
 
     @property
@@ -111,36 +116,51 @@ class BoschWaterHeater(BoschClimateWaterEntity, WaterHeaterEntity):
     @property
     def supported_features(self):
         """Return the list of supported features."""
-        if (
-            self._bosch_object.ha_mode == STATE_OFF
-            or self._bosch_object.setpoint == STATE_OFF
-            or not self._bosch_object.support_target_temp
-        ):
+        try:
+            if (
+                self._bosch_object.ha_mode == STATE_OFF
+                or self._bosch_object.setpoint == STATE_OFF
+                or not self._bosch_object.support_target_temp
+            ):
+                return WaterHeaterEntityFeature.OPERATION_MODE
+            return (
+                WaterHeaterEntityFeature.OPERATION_MODE
+                | WaterHeaterEntityFeature.TARGET_TEMPERATURE
+            )
+        except (AttributeError, TypeError):
+            # If ha_mode is not available, just support operation mode
             return WaterHeaterEntityFeature.OPERATION_MODE
-        return (
-            WaterHeaterEntityFeature.TARGET_TEMPERATURE
-            | WaterHeaterEntityFeature.OPERATION_MODE
-        )
 
     async def async_set_temperature(self, **kwargs):
         """Set new target temperature."""
         target_temp = kwargs.get(ATTR_TEMPERATURE)
-        if target_temp and target_temp != self._target_temperature:
-            await self._bosch_object.set_temperature(target_temp)
-        else:
+        if not target_temp:
             _LOGGER.error("A target temperature must be provided")
+            return False
+        
+        _LOGGER.debug(f"Setting DHW temperature to {target_temp}°C")
+        try:
+            result = await self._bosch_object.set_temperature(target_temp)
+            _LOGGER.debug(f"DHW temperature set result: {result}")
+            return result
+        except Exception as err:
+            _LOGGER.error(f"Error setting DHW temperature: {err}")
+            return False
 
     async def async_set_operation_mode(self, operation_mode):
         """Set operation mode."""
         _LOGGER.debug(f"Setting operation mode of {self._name} to {operation_mode}.")
-        status = await self.bosch_object.set_ha_mode(operation_mode)
-        if status > 0:
-            return True
+        try:
+            status = await self._bosch_object.set_ha_mode(operation_mode)
+            if status > 0:
+                return True
+        except Exception as err:
+            _LOGGER.error(f"Error setting operation mode: {err}")
         return False
 
     async def async_update(self):
         """Get the latest date."""
-        _LOGGER.debug("Updating Bosch water_heater.")
+        _LOGGER.debug("Updating Bosch water_heater %s.", self._name)
         if not self._bosch_object or not self._bosch_object.update_initialized:
             return
         self._temperature_unit = UNITS_CONVERTER.get(
@@ -148,12 +168,21 @@ class BoschWaterHeater(BoschClimateWaterEntity, WaterHeaterEntity):
         )
         if (
             self._state != self._bosch_object.state
-            or self._operation_list == self._bosch_object.ha_modes
+            or self._operation_list != self._bosch_object.ha_modes
             or self._current_temperature != self._bosch_object.current_temp
         ):
             self._state = self._bosch_object.state
+            self._operation_list = self._bosch_object.ha_modes
             self._target_temperature = self._bosch_object.target_temperature
             self._current_temperature = self._bosch_object.current_temp
-            self._operation_list = self._bosch_object.ha_modes
             self._mode = self._bosch_object.ha_mode
+            _LOGGER.debug(
+                "DHW %s updated: state=%s, current_temp=%.1f°C, target_temp=%.1f°C, mode=%s, available_modes=%s",
+                self._name,
+                self._state,
+                self._current_temperature if self._current_temperature else 0,
+                self._target_temperature if self._target_temperature else 0,
+                self._mode,
+                self._operation_list
+            )
             self.async_schedule_update_ha_state()

@@ -79,6 +79,11 @@ class BoschThermostat(BoschClimateWaterEntity, ClimateEntity):
             if self._bosch_object.schedule:
                 data[SWITCHPOINT] = self._bosch_object.schedule.active_program
             data[BOSCH_STATE] = self._state
+            # Add current operation mode (MANUAL, AUTO, etc.)
+            try:
+                data['operation_mode'] = self._bosch_object._op_mode.current_mode
+            except (AttributeError, TypeError):
+                pass
             if self._bosch_object.extra_state_attributes:
                 data = {**data, **self._bosch_object.extra_state_attributes}
         except NotImplementedError:
@@ -114,11 +119,26 @@ class BoschThermostat(BoschClimateWaterEntity, ClimateEntity):
     async def async_set_temperature(self, **kwargs):
         """Set new target temperature."""
         temperature = kwargs.get(ATTR_TEMPERATURE)
-        _LOGGER.debug(f"Setting target temperature {temperature}.")
-        await self._bosch_object.set_temperature(temperature)
-        if self._optimistic_mode:
-            self._target_temperature = temperature
-            self.schedule_update_ha_state()
+        if temperature is None:
+            _LOGGER.error("No target temperature provided")
+            return False
+        
+        # Validate temperature is within limits
+        if temperature < self.min_temp or temperature > self.max_temp:
+            _LOGGER.error(f"Temperature {temperature}°C out of range [{self.min_temp}-{self.max_temp}]")
+            return False
+        
+        _LOGGER.debug(f"Setting target temperature to {temperature}°C (current: {self._current_temperature}°C)")
+        try:
+            result = await self._bosch_object.set_temperature(temperature)
+            _LOGGER.debug(f"Temperature set result: {result}")
+            if self._optimistic_mode:
+                self._target_temperature = temperature
+                self.schedule_update_ha_state()
+            return result
+        except Exception as err:
+            _LOGGER.error(f"Error setting temperature: {err}")
+            return False
 
     @property
     def hvac_mode(self):
@@ -142,12 +162,19 @@ class BoschThermostat(BoschClimateWaterEntity, ClimateEntity):
     @property
     def preset_modes(self):
         """Return available preset modes."""
-        return self._bosch_object.preset_modes
+        try:
+            return self._bosch_object.preset_modes
+        except (AttributeError, KeyError, TypeError):
+            # If preset modes not available, return empty list
+            return []
 
     @property
     def preset_mode(self):
         """Return current preset mode."""
-        return self._bosch_object.preset_mode
+        try:
+            return self._bosch_object.preset_mode
+        except (AttributeError, KeyError, TypeError):
+            return None
 
     async def async_set_preset_mode(self, preset_mode):
         """Set new target preset mode."""
@@ -171,4 +198,13 @@ class BoschThermostat(BoschClimateWaterEntity, ClimateEntity):
             self._current_temperature = self._bosch_object.current_temp
             self._hvac_modes = self._bosch_object.ha_modes
             self._hvac_mode = self._bosch_object.ha_mode
+            _LOGGER.debug(
+                "HC %s updated: state=%s, current_temp=%.1f°C, target_temp=%.1f°C, mode=%s, available_modes=%s",
+                self._name,
+                self._state,
+                self._current_temperature if self._current_temperature else 0,
+                self._target_temperature if self._target_temperature else 0,
+                self._hvac_mode,
+                self._hvac_modes
+            )
             self.async_schedule_update_ha_state()

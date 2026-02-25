@@ -62,6 +62,7 @@ from custom_components.bosch.switch import SWITCH
 from .const import (
     ACCESS_KEY,
     ACCESS_TOKEN,
+    REFRESH_TOKEN,
     BINARY_SENSOR,
     BOSCH_GATEWAY_ENTRY,
     CLIMATE,
@@ -73,6 +74,7 @@ from .const import (
     GATEWAY,
     INTERVAL,
     NOTIFICATION_ID,
+    POINTTAPI,
     RECORDING_INTERVAL,
     SCAN_INTERVAL,
     SIGNAL_BINARY_SENSOR_UPDATE_BOSCH,
@@ -141,6 +143,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Create entry for Bosch thermostat device."""
     _LOGGER.info(f"Setting up Bosch component version {LIBVERSION}.")
     uuid = entry.data[UUID]
+    
+    # Log the entry data for debugging
+    _LOGGER.info(f"[Setup Entry] Keys in entry.data: {list(entry.data.keys())}")
+    _LOGGER.info(f"[Setup Entry] REFRESH_TOKEN constant: '{REFRESH_TOKEN}'")
+    refresh_token_value = entry.data.get(REFRESH_TOKEN)
+    _LOGGER.info(f"[Setup Entry] refresh_token from entry.data.get(REFRESH_TOKEN): {refresh_token_value is not None}")
+    if refresh_token_value:
+        _LOGGER.debug(f"[Setup Entry] refresh_token value (first 30 chars): {refresh_token_value[:30]}...")
+    
     entry.async_on_unload(entry.add_update_listener(async_update_options))
     gateway_entry = BoschGatewayEntry(
         hass=hass,
@@ -148,8 +159,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         host=entry.data[CONF_ADDRESS],
         protocol=entry.data[CONF_PROTOCOL],
         device_type=entry.data[CONF_DEVICE_TYPE],
-        access_key=entry.data[ACCESS_KEY],
+        access_key=entry.data.get(ACCESS_KEY),
         access_token=entry.data[ACCESS_TOKEN],
+        refresh_token=entry.data.get(REFRESH_TOKEN),
         entry=entry,
     )
     hass.data[DOMAIN][uuid] = {BOSCH_GATEWAY_ENTRY: gateway_entry}
@@ -181,8 +193,30 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
 
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry):
-    """Reload entry if options change."""
-    _LOGGER.debug("Reloading entry %s", entry.entry_id)
+    """Reload entry if options change (but not if just tokens update)."""
+    # We track the old data to detect what actually changed
+    # Tokens should update without reloading
+    if hasattr(async_update_options, '_last_data'):
+        old_data = async_update_options._last_data
+        new_data = entry.data
+        
+        # Check if only tokens changed
+        token_keys = {ACCESS_TOKEN, REFRESH_TOKEN}
+        config_keys = set(new_data.keys()) - token_keys
+        
+        old_config = {k: old_data.get(k) for k in config_keys if k in old_data}
+        new_config = {k: new_data.get(k) for k in config_keys if k in new_data}
+        
+        # If config (non-token) data is the same, don't reload
+        if old_config == new_config:
+            _LOGGER.debug("[Update Listener] Only tokens changed, skipping reload")
+            async_update_options._last_data = dict(new_data)
+            return
+    
+    # Store current data for next check
+    async_update_options._last_data = dict(entry.data)
+    
+    _LOGGER.debug("Config entry changed, reloading entry %s", entry.entry_id)
     await hass.config_entries.async_reload(entry.entry_id)
 
 
@@ -206,7 +240,7 @@ class BoschGatewayEntry:
     """Bosch gateway entry config class."""
 
     def __init__(
-        self, hass, uuid, host, protocol, device_type, access_key, access_token, entry
+        self, hass, uuid, host, protocol, device_type, access_key, access_token, entry, refresh_token=None
     ) -> None:
         """Init Bosch gateway entry config class."""
         self.hass = hass
@@ -214,14 +248,17 @@ class BoschGatewayEntry:
         self._host = host
         self._access_key = access_key
         self._access_token = access_token
+        self._refresh_token = refresh_token
         self._device_type = device_type
         self._protocol = protocol
+        _LOGGER.info(f"[BoschGatewayEntry.__init__] protocol param: '{protocol}', device_type: '{device_type}', refresh_token: {refresh_token is not None}")
         self.config_entry = entry
         self._debug_service_registered = False
         self.gateway = None
         self.prefs = None
         self._initial_update = False
         self._signal_registered = False
+        self._initialized = False
         self.supported_platforms = []
         self._update_lock = None
 
@@ -234,17 +271,111 @@ class BoschGatewayEntry:
         import bosch_thermostat_client as bosch
 
         _LOGGER.debug("Initializing Bosch integration.")
+        _LOGGER.debug(f"Device type: {self._device_type}, Protocol: {self._protocol}, POINTTAPI: {POINTTAPI}, match: {self._device_type == POINTTAPI}")
+        _LOGGER.info(f"[Init] Protocol value: '{self._protocol}' (type: {type(self._protocol).__name__}), checking OAUTH2: {self._protocol == 'OAUTH2'}")
         self._update_lock = asyncio.Lock()
-        BoschGateway = bosch.gateway_chooser(device_type=self._device_type)
-        self.gateway = BoschGateway(
-            session=async_get_clientsession(self.hass, verify_ssl=False)
-            if self._protocol == HTTP
-            else None,
-            session_type=self._protocol,
-            host=self._host,
-            access_key=self._access_key,
-            access_token=self._access_token,
-        )
+        
+        try:
+            # If using OAuth2 protocol or POINTTAPI device type, use Oauth2Gateway
+            if self._protocol == "OAUTH2" or self._device_type == POINTTAPI:
+                _LOGGER.info(f"[Init] Condition matched! Protocol={self._protocol}, POINTTAPI={self._device_type == POINTTAPI}")
+                try:
+                    from bosch_thermostat_client.gateway.oauth2 import Oauth2Gateway
+                    BoschGateway = Oauth2Gateway
+                    _LOGGER.info(f"✓ [Init] Successfully imported and using Oauth2Gateway")
+                except ImportError as import_err:
+                    _LOGGER.error(f"Failed to import Oauth2Gateway: {import_err}")
+                    raise
+            else:
+                _LOGGER.info(f"[Init] Condition NOT matched. Protocol={self._protocol}, POINTTAPI={self._device_type == POINTTAPI}")
+                BoschGateway = bosch.gateway_chooser(device_type=self._device_type)
+                _LOGGER.info(f"[Init] Using gateway_chooser for device_type={self._device_type}")
+        except (KeyError, ValueError) as err:
+            _LOGGER.warning(f"Device type {self._device_type} not found in gateway_chooser, attempting POINTTAPI as fallback: {err}")
+            # Fallback for unknown device types (like K30RF with brand='unknown')
+            try:
+                BoschGateway = bosch.gateway_chooser(POINTTAPI)
+            except Exception as fallback_err:
+                _LOGGER.error(f"Could not select gateway for device type {self._device_type}: {fallback_err}")
+                return False
+        
+        # Build gateway kwargs
+        gateway_kwargs = {
+            "host": self._host,
+            "access_token": self._access_token,
+        }
+        
+        # Add parameters based on protocol/device type
+        if self._protocol == "OAUTH2" or self._device_type == POINTTAPI:
+            # Oauth2Gateway for OAuth2 protocol or POINTTAPI device
+            gateway_kwargs["session"] = async_get_clientsession(self.hass, verify_ssl=False)
+            gateway_kwargs["device_type"] = self._device_type
+        else:
+            # Other device types (HTTP/XMPP)
+            gateway_kwargs["session_type"] = self._protocol
+            if self._access_key:
+                gateway_kwargs["access_key"] = self._access_key
+            if self._protocol == HTTP:
+                gateway_kwargs["session"] = async_get_clientsession(self.hass, verify_ssl=False)
+        
+        if self._refresh_token is not None:
+            gateway_kwargs["refresh_token"] = self._refresh_token
+        
+        _LOGGER.debug(f"Gateway init kwargs: {list(gateway_kwargs.keys())}")
+        
+        try:
+            self.gateway = BoschGateway(**gateway_kwargs)
+            # Simple token sync: patch the refresh method to update config entry
+            if hasattr(self.gateway, '_connector') and hasattr(self.gateway._connector, '_refresh_access_token'):
+                orig_refresh = self.gateway._connector._refresh_access_token
+                
+                async def token_sync_refresh(*args, **kwargs):
+                    _LOGGER.debug("[Token Sync] Refreshing access token...")
+                    result = await orig_refresh(*args, **kwargs)
+                    
+                    # Update config entry with fresh tokens after successful refresh
+                    # Save tokens immediately after successful refresh
+                    if result:
+                        new_refresh_token = getattr(self.gateway._connector, '_refresh_token', None)
+                        new_access_token = getattr(self.gateway._connector, '_access_token', None)
+                        
+                        if new_refresh_token and new_refresh_token != self._refresh_token:
+                            _LOGGER.info("[Token Sync] Updating config entry with fresh tokens")
+                            new_data = dict(self.config_entry.data)
+                            new_data[REFRESH_TOKEN] = new_refresh_token
+                            if new_access_token:
+                                new_data[ACCESS_TOKEN] = new_access_token
+                            
+                            # Update local copies
+                            self._refresh_token = new_refresh_token
+                            self._access_token = new_access_token
+                            
+                            # Update config entry directly - returns boolean, don't await
+                            try:
+                                result = self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+                                _LOGGER.debug(f"[Token Sync] Config entry updated: {result}")
+                            except Exception as e:
+                                _LOGGER.error(f"[Token Sync] Failed to update config entry: {e}")
+                    
+                    return result
+                
+                # Replace the refresh method
+                self.gateway._connector._refresh_access_token = token_sync_refresh
+        except Exception as init_err:
+            error_msg = str(init_err)
+            if "not find supported device" in error_msg or "unsupported" in error_msg.lower():
+                _LOGGER.error(f"Library device validation failed: {init_err}. Device may still work but library detected unsupported device.")
+                # Attempt to create device anyway - some K30RF devices have non-standard module tokens
+                try:
+                    self.gateway = BoschGateway(**gateway_kwargs)
+                except Exception as retry_err:
+                    _LOGGER.error(f"Failed to create Oauth2Gateway even after retry: {retry_err}")
+                    # Try to continue anyway - device might be partially functional
+                    _LOGGER.warning("Attempting to continue with minimal gateway setup")
+                    self.gateway = None
+            else:
+                _LOGGER.error(f"Failed to initialize gateway: {init_err}")
+                return False
 
         async def close_connection(event) -> None:
             """Close connection with server."""
@@ -276,6 +407,7 @@ class BoschGatewayEntry:
                 "Bosch component registered with platforms %s.",
                 self.supported_platforms,
             )
+            self._initialized = True
             return True
         return False
 
@@ -333,6 +465,12 @@ class BoschGatewayEntry:
             supported_bosch = await self.gateway.get_capabilities()
             _LOGGER.debug(f"Bosch supported capabilities: {supported_bosch}")
             for supported in supported_bosch:
+                if supported not in SUPPORTED_PLATFORMS:
+                    _LOGGER.warning(
+                        "Circuit type '%s' is not supported by this custom component. Skipping.",
+                        supported
+                    )
+                    continue
                 elements = SUPPORTED_PLATFORMS[supported]
                 for element in elements:
                     if element not in self.supported_platforms:
@@ -407,6 +545,14 @@ class BoschGatewayEntry:
     async def component_update(self, component_type=None, event_time=None):
         """Update data from HC, DHW, ZN, Sensors, Switch."""
         if component_type in self.supported_platforms:
+            # Guard: check if component has been registered before accessing
+            if component_type not in self.hass.data[DOMAIN][self.uuid]:
+                _LOGGER.debug(
+                    "Component %s not yet registered in hass.data, skipping update",
+                    component_type,
+                )
+                return
+                
             updated = False
             entities = self.hass.data[DOMAIN][self.uuid][component_type]
             for entity in entities:
