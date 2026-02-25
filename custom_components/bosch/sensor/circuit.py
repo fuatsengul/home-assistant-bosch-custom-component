@@ -15,3 +15,9 @@ class CircuitSensor(BoschBaseSensor):
         return (
             CIRCUITS_SENSOR_NAMES[self._circuit_type] + " " + self._domain_name
         )
+    
+    @property
+    def name(self):
+        """Return the name of the sensor with unique suffix."""
+        # Include the actual sensor id for uniqueness
+        return f"{self._name} ({self._bosch_object.id})"

@@ -69,6 +69,19 @@ class BoschThermostat(BoschClimateWaterEntity, ClimateEntity):
         super().__init__(
             hass=hass, uuid=uuid, bosch_object=bosch_object, gateway=gateway
         )
+        
+        # Initialize modes from bosch object immediately
+        try:
+            self._hvac_modes = self._bosch_object.ha_modes or []
+            self._hvac_mode = self._bosch_object.ha_mode
+            _LOGGER.debug(
+                "HC %s initialized with modes: %s, current_mode: %s",
+                self._name, self._hvac_modes, self._hvac_mode
+            )
+        except (AttributeError, Exception) as err:
+            _LOGGER.warning("Could not initialize modes for %s: %s", self._name, err)
+            self._hvac_modes = []
+            self._hvac_mode = None
 
     @property
     def state_attributes(self) -> dict[str, Any]:
@@ -121,24 +134,30 @@ class BoschThermostat(BoschClimateWaterEntity, ClimateEntity):
         temperature = kwargs.get(ATTR_TEMPERATURE)
         if temperature is None:
             _LOGGER.error("No target temperature provided")
-            return False
+            return
         
         # Validate temperature is within limits
         if temperature < self.min_temp or temperature > self.max_temp:
             _LOGGER.error(f"Temperature {temperature}°C out of range [{self.min_temp}-{self.max_temp}]")
-            return False
+            return
         
-        _LOGGER.debug(f"Setting target temperature to {temperature}°C (current: {self._current_temperature}°C)")
+        _LOGGER.info(
+            "Setting %s target temperature from %.1f°C to %.1f°C",
+            self._name,
+            self._current_temperature if self._current_temperature else 0,
+            temperature
+        )
         try:
             result = await self._bosch_object.set_temperature(temperature)
-            _LOGGER.debug(f"Temperature set result: {result}")
-            if self._optimistic_mode:
-                self._target_temperature = temperature
-                self.schedule_update_ha_state()
-            return result
+            if result:
+                _LOGGER.info("Temperature set successfully for %s", self._name)
+                if self._optimistic_mode:
+                    self._target_temperature = temperature
+                    self.schedule_update_ha_state()
+            else:
+                _LOGGER.warning("Temperature set returned False for %s", self._name)
         except Exception as err:
-            _LOGGER.error(f"Error setting temperature: {err}")
-            return False
+            _LOGGER.error(f"Error setting temperature for {self._name}: {err}")
 
     @property
     def hvac_mode(self):

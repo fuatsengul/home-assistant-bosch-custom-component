@@ -46,7 +46,8 @@ class BoschBaseSensor(BoschEntity, SensorEntity):
                 else name
             )
         else:
-            self._name = f"{self._bosch_object.parent_id} {name}"
+            # Circuit sensor - include parent_id and sensor id for uniqueness
+            self._name = f"{self._bosch_object.parent_id} {name} ({self._bosch_object.id})"
         self._attr_uri = attr_uri
         if self._bosch_object.device_class:
             self._attr_device_class = self._bosch_object.device_class
