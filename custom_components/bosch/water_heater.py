@@ -65,18 +65,21 @@ class BoschWaterHeater(BoschClimateWaterEntity, WaterHeaterEntity):
         self._current_setpoint = None
         self._target_temp_off = 0
         self._operation_list = []
+        self._is_away = False  # Extra Hot Water (charge) active
 
         super().__init__(
             hass=hass, uuid=uuid, bosch_object=bosch_object, gateway=gateway
         )
 
     async def service_charge(self, value) -> None:
-        """Set charge of DHW device.
+        """Set charge of DHW device (Extra Hot Water).
 
         Upstream lib doesn't check if value is proper!
         """
         _LOGGER.info("Setting %s %s with value %s", self._name, CHARGE, value)
         await self._bosch_object.set_service_call(CHARGE, value)
+        self._is_away = (value == "start")
+        self.async_schedule_update_ha_state()
 
     @property
     def state_attributes(self):
@@ -87,7 +90,8 @@ class BoschWaterHeater(BoschClimateWaterEntity, WaterHeaterEntity):
         if self._bosch_object.schedule:
             data[SWITCHPOINT] = self._bosch_object.schedule.active_program
         data[BOSCH_STATE] = self._state
-        # Add current operation mode (MANUAL, AUTO, etc.)
+        data["extra_hot_water"] = self._is_away
+        # Add current operation mode
         try:
             data['operation_mode'] = self._bosch_object._op_mode.current_mode
         except (AttributeError, TypeError):
@@ -116,20 +120,34 @@ class BoschWaterHeater(BoschClimateWaterEntity, WaterHeaterEntity):
     @property
     def supported_features(self):
         """Return the list of supported features."""
+        features = WaterHeaterEntityFeature.OPERATION_MODE
         try:
-            if (
+            if not (
                 self._bosch_object.ha_mode == STATE_OFF
                 or self._bosch_object.setpoint == STATE_OFF
                 or not self._bosch_object.support_target_temp
             ):
-                return WaterHeaterEntityFeature.OPERATION_MODE
-            return (
-                WaterHeaterEntityFeature.OPERATION_MODE
-                | WaterHeaterEntityFeature.TARGET_TEMPERATURE
-            )
+                features |= WaterHeaterEntityFeature.TARGET_TEMPERATURE
         except (AttributeError, TypeError):
-            # If ha_mode is not available, just support operation mode
-            return WaterHeaterEntityFeature.OPERATION_MODE
+            pass
+        # Always support away mode for Extra Hot Water (charge) function
+        features |= WaterHeaterEntityFeature.AWAY_MODE
+        return features
+
+    @property
+    def is_away_mode_on(self):
+        """Return true if away mode (Extra Hot Water) is on."""
+        return self._is_away
+
+    async def async_turn_away_mode_on(self):
+        """Turn on Extra Hot Water (charge)."""
+        _LOGGER.info("Starting Extra Hot Water charge for %s", self._name)
+        await self.service_charge("start")
+
+    async def async_turn_away_mode_off(self):
+        """Turn off Extra Hot Water (charge)."""
+        _LOGGER.info("Stopping Extra Hot Water charge for %s", self._name)
+        await self.service_charge("stop")
 
     async def async_set_temperature(self, **kwargs):
         """Set new target temperature."""
@@ -176,13 +194,20 @@ class BoschWaterHeater(BoschClimateWaterEntity, WaterHeaterEntity):
             self._target_temperature = self._bosch_object.target_temperature
             self._current_temperature = self._bosch_object.current_temp
             self._mode = self._bosch_object.ha_mode
+            # Track charge (Extra Hot Water) status
+            try:
+                charge_status = self._bosch_object.get_value("status")
+                self._is_away = (charge_status == "start")
+            except (AttributeError, KeyError, TypeError):
+                pass
             _LOGGER.debug(
-                "DHW %s updated: state=%s, current_temp=%.1f°C, target_temp=%.1f°C, mode=%s, available_modes=%s",
+                "DHW %s updated: state=%s, current_temp=%.1f°C, target_temp=%.1f°C, mode=%s, available_modes=%s, extra_hot_water=%s",
                 self._name,
                 self._state,
                 self._current_temperature if self._current_temperature else 0,
                 self._target_temperature if self._target_temperature else 0,
                 self._mode,
-                self._operation_list
+                self._operation_list,
+                self._is_away
             )
             self.async_schedule_update_ha_state()
