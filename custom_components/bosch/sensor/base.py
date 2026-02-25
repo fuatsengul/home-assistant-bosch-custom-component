@@ -97,8 +97,9 @@ class BoschBaseSensor(BoschEntity, SensorEntity):
             return None
 
         def check_name():
-            if data.get(NAME, "") != self._name:
-                self._name = data.get(NAME)
+            # Don't override name - keep our custom names with sensor IDs
+            # This was overwriting the names we set during initialization
+            pass
 
         units = get_units()
 
